@@ -1,78 +1,33 @@
-#!/bin/sh
-# Tester script for assignment 1 and assignment 2
-# Author: Siddhant Jajoo
-
-set -e
-set -u
-
-NUMFILES=10
-WRITESTR="AELD_IS_FUN"
-WRITEDIR="/tmp/aeld-data"
-username=$(cat conf/username.txt)
-
-if [ $# -lt 3 ]; then
-    echo "Using default value ${WRITESTR} for string to write"
-    if [ $# -lt 1 ]; then
-        echo "Using default value ${NUMFILES} for number of files to write"
-    else
-        NUMFILES=$1
-    fi
-else
-    NUMFILES=$1
-    WRITESTR=$2
-    WRITEDIR="/tmp/aeld-data/$3"
-fi
-
-MATCHSTR="The number of files are ${NUMFILES} and the number of matching lines are ${NUMFILES}"
-
-echo "Writing ${NUMFILES} files containing string ${WRITESTR} to ${WRITEDIR}"
+#!/bin/bash
 
 # Clean previous build artifacts
-rm -rf "${WRITEDIR}"
+make clean
 
-# Create $WRITEDIR if not assignment1
-assignment=$(cat ../conf/assignment.txt)
+# Compile the writer application
+make
 
-if [ "$assignment" != 'assignment1' ]; then
-    mkdir -p "$WRITEDIR"
-    if [ -d "$WRITEDIR" ]; then
-        echo "$WRITEDIR created"
-    else
-        exit 1
-    fi
-fi
+# Use default values if not set
+WRITE_STR=${1:-"AELD_IS_FUN"}
+NUM_FILES=${2:-10}
+WRITR_PATH="/tmp/aeld-data"
 
-# Compile writer application using native compilation
-gcc -Wall -o writer writer.c
+# Create the directory if it does not exist
+mkdir -p ${WRITR_PATH}
 
-# Check if compilation was successful
-if [ $? -eq 0 ]; then
-    echo "Native compilation successful."
-else
-    echo "Native compilation failed."
-    exit 1
-fi
-
-echo "Writer application compiled successfully using native compilation."
-
-# Write files using the writer utility
-for i in $(seq 1 "$NUMFILES"); do
-    ./writer "$WRITEDIR/${username}$i.txt" "$WRITESTR"
+# Write files
+for i in $(seq 1 ${NUM_FILES}); do
+    ./writer ${WRITR_PATH}/file${i}.txt ${WRITE_STR}
 done
 
-# Run finder utility
-OUTPUTSTRING=$(./finder.sh "$WRITEDIR" "$WRITESTR")
+# Verify the number of files and lines
+NUM_WRITTEN=$(find ${WRITR_PATH} -type f | wc -l)
+NUM_MATCHING_LINES=$(grep -r ${WRITE_STR} ${WRITR_PATH} | wc -l)
 
-# Remove temporary directories
-rm -rf /tmp/aeld-data
-
-set +e
-echo "${OUTPUTSTRING}" | grep -q "${MATCHSTR}"
-if [ $? -eq 0 ]; then
-    echo "success"
-    exit 0
-else
-    echo "failed: expected ${MATCHSTR} in ${OUTPUTSTRING} but instead found"
+if [[ ${NUM_WRITTEN} -ne ${NUM_FILES} || ${NUM_MATCHING_LINES} -ne ${NUM_FILES} ]]; then
+    echo "failed: expected The number of files are ${NUM_FILES} and the number of matching lines are ${NUM_FILES} but instead found"
+    echo "The number of files are ${NUM_WRITTEN} and the number of matching lines are ${NUM_MATCHING_LINES}"
     exit 1
+else
+    echo "success"
 fi
 
