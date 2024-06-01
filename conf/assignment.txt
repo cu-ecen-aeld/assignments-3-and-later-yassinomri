@@ -1,2 +1,6 @@
+<<<<<<< HEAD
 assignment1
 assignment2
+=======
+assignment3
+>>>>>>> assignments-base/assignment3-part-1
