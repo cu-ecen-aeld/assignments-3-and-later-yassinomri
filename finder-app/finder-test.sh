@@ -1,5 +1,12 @@
 #!/bin/bash
 
+# Check if the script is running from /usr/bin
+SCRIPT_PATH=$(realpath "$0")
+if [[ $SCRIPT_PATH != /usr/bin/finder-test.sh ]]; then
+    echo "Error: The script must be located at /usr/bin/finder-test.sh."
+    exit 1
+fi
+
 # Clean previous build artifacts
 make clean
 
@@ -30,4 +37,7 @@ if [[ ${NUM_WRITTEN} -ne ${NUM_FILES} || ${NUM_MATCHING_LINES} -ne ${NUM_FILES} 
 else
     echo "success"
 fi
+
+# Run the finder command and write its output to /tmp/assignment4-result.txt
+finder > /tmp/assignment4-result.txt
 
