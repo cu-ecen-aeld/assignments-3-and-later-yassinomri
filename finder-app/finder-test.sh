@@ -7,37 +7,40 @@ if [[ $SCRIPT_PATH != /usr/bin/finder-test.sh ]]; then
     exit 1
 fi
 
-# Clean previous build artifacts
-make clean
-
-# Compile the writer application
-make
-
 # Use default values if not set
-WRITE_STR=${1:-"AELD_IS_FUN"}
-NUM_FILES=${2:-10}
-WRITR_PATH="/tmp/aeld-data"
+NUMFILES=${1:-10}
+WRITESTR=${2:-"AELD_IS_FUN"}
+WRITEDIR="/tmp/aeld-data"
+CONFDIR="/etc/finder-app/conf"
 
 # Create the directory if it does not exist
-mkdir -p ${WRITR_PATH}
+mkdir -p "$WRITEDIR"
 
 # Write files
-for i in $(seq 1 ${NUM_FILES}); do
-    ./writer ${WRITR_PATH}/file${i}.txt ${WRITE_STR}
+for i in $(seq 1 $NUMFILES)
+do
+    writer "$WRITEDIR/file$i.txt" "$WRITESTR"
 done
 
-# Verify the number of files and lines
-NUM_WRITTEN=$(find ${WRITR_PATH} -type f | wc -l)
-NUM_MATCHING_LINES=$(grep -r ${WRITE_STR} ${WRITR_PATH} | wc -l)
-
-if [[ ${NUM_WRITTEN} -ne ${NUM_FILES} || ${NUM_MATCHING_LINES} -ne ${NUM_FILES} ]]; then
-    echo "failed: expected The number of files are ${NUM_FILES} and the number of matching lines are ${NUM_FILES} but instead found"
-    echo "The number of files are ${NUM_WRITTEN} and the number of matching lines are ${NUM_MATCHING_LINES}"
-    exit 1
+# Run finder.sh and save output to /tmp/assignment4-result.txt
+if [ -f "$CONFDIR/username.txt" ]; then
+    USERNAME=$(cat "$CONFDIR/username.txt")
 else
-    echo "success"
+    echo "Error: $CONFDIR/username.txt not found"
+    exit 1
 fi
 
-# Run the finder command and write its output to /tmp/assignment4-result.txt
-finder > /tmp/assignment4-result.txt
+finder.sh "$WRITEDIR" "$WRITESTR" > /tmp/assignment4-result.txt
 
+# Verify the number of files and matching lines
+MATCHFILES=$(grep "The number of files are" /tmp/assignment4-result.txt | cut -d ' ' -f 5)
+MATCHLINES=$(grep "The number of matching lines are" /tmp/assignment4-result.txt | cut -d ' ' -f 6)
+
+if [ "$MATCHFILES" -eq "$NUMFILES" ] && [ "$MATCHLINES" -eq "$NUMFILES" ]; then
+    echo "success"
+    exit 0
+else
+    echo "failed: expected $NUMFILES files and $NUMFILES matching lines,"
+    echo "but found $MATCHFILES files and $MATCHLINES matching lines."
+    exit 1
+fi
