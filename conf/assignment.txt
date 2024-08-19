@@ -1,1 +1,10 @@
+<<<<<<< HEAD
 assignment5
+=======
+
+assignment1
+assignment2
+assignment3
+assignment4
+
+>>>>>>> 72adb1697ec689eb5a5a406095e49ce27d6ecb74

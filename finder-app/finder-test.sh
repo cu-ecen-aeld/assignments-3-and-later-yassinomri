@@ -1,73 +1,46 @@
-#!/bin/sh
-# Tester script for assignment 1 and assignment 2
-# Author: Siddhant Jajoo
+#!/bin/bash
 
-set -e
-set -u
-
-NUMFILES=10
-WRITESTR=AELD_IS_FUN
-WRITEDIR=/tmp/aeld-data
-username=$(cat conf/username.txt)
-
-if [ $# -lt 3 ]
-then
-	echo "Using default value ${WRITESTR} for string to write"
-	if [ $# -lt 1 ]
-	then
-		echo "Using default value ${NUMFILES} for number of files to write"
-	else
-		NUMFILES=$1
-	fi	
-else
-	NUMFILES=$1
-	WRITESTR=$2
-	WRITEDIR=/tmp/aeld-data/$3
+# Check if the script is running from /usr/bin
+SCRIPT_PATH=$(realpath "$0")
+if [[ $SCRIPT_PATH != /usr/bin/finder-test.sh ]]; then
+    echo "Error: The script must be located at /usr/bin/finder-test.sh."
+    exit 1
 fi
 
-MATCHSTR="The number of files are ${NUMFILES} and the number of matching lines are ${NUMFILES}"
+# Use default values if not set
+NUMFILES=${1:-10}
+WRITESTR=${2:-"AELD_IS_FUN"}
+WRITEDIR="/tmp/aeld-data"
+CONFDIR="/etc/finder-app/conf"
 
-echo "Writing ${NUMFILES} files containing string ${WRITESTR} to ${WRITEDIR}"
+# Create the directory if it does not exist
+mkdir -p "$WRITEDIR"
 
-rm -rf "${WRITEDIR}"
-
-# create $WRITEDIR if not assignment1
-assignment=`cat ../conf/assignment.txt`
-
-if [ $assignment != 'assignment1' ]
-then
-	mkdir -p "$WRITEDIR"
-
-	#The WRITEDIR is in quotes because if the directory path consists of spaces, then variable substitution will consider it as multiple argument.
-	#The quotes signify that the entire string in WRITEDIR is a single string.
-	#This issue can also be resolved by using double square brackets i.e [[ ]] instead of using quotes.
-	if [ -d "$WRITEDIR" ]
-	then
-		echo "$WRITEDIR created"
-	else
-		exit 1
-	fi
-fi
-#echo "Removing the old writer utility and compiling as a native application"
-#make clean
-#make
-
-for i in $( seq 1 $NUMFILES)
+# Write files
+for i in $(seq 1 $NUMFILES)
 do
-	./writer.sh "$WRITEDIR/${username}$i.txt" "$WRITESTR"
+    writer "$WRITEDIR/file$i.txt" "$WRITESTR"
 done
 
-OUTPUTSTRING=$(./finder.sh "$WRITEDIR" "$WRITESTR")
-
-# remove temporary directories
-rm -rf /tmp/aeld-data
-
-set +e
-echo ${OUTPUTSTRING} | grep "${MATCHSTR}"
-if [ $? -eq 0 ]; then
-	echo "success"
-	exit 0
+# Run finder.sh and save output to /tmp/assignment4-result.txt
+if [ -f "$CONFDIR/username.txt" ]; then
+    USERNAME=$(cat "$CONFDIR/username.txt")
 else
-	echo "failed: expected  ${MATCHSTR} in ${OUTPUTSTRING} but instead found"
-	exit 1
+    echo "Error: $CONFDIR/username.txt not found"
+    exit 1
+fi
+
+finder.sh "$WRITEDIR" "$WRITESTR" > /tmp/assignment4-result.txt
+
+# Verify the number of files and matching lines
+MATCHFILES=$(grep "The number of files are" /tmp/assignment4-result.txt | cut -d ' ' -f 5)
+MATCHLINES=$(grep "The number of matching lines are" /tmp/assignment4-result.txt | cut -d ' ' -f 6)
+
+if [ "$MATCHFILES" -eq "$NUMFILES" ] && [ "$MATCHLINES" -eq "$NUMFILES" ]; then
+    echo "success"
+    exit 0
+else
+    echo "failed: expected $NUMFILES files and $NUMFILES matching lines,"
+    echo "but found $MATCHFILES files and $MATCHLINES matching lines."
+    exit 1
 fi
