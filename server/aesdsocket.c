@@ -1,8 +1,9 @@
+#include <sys/types.h>
+#include <sys/stat.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <syslog.h>
@@ -160,23 +161,17 @@ int main(int argc, char *argv[]) {
         fclose(fp);
         close(new_socket);
 
-        syslog(LOG_INFO, "Closed connection from %d.%d.%d.%d",
-               (client_addr.ss_family == AF_INET ? 
-               ((struct sockaddr_in*)&client_addr)->sin_addr.s_addr & 0xFF) :
-               0,
-               (client_addr.ss_family == AF_INET ? 
-               (((struct sockaddr_in*)&client_addr)->sin_addr.s_addr >> 8) & 0xFF) :
-               0,
-               (client_addr.ss_family == AF_INET ? 
-               (((struct sockaddr_in*)&client_addr)->sin_addr.s_addr >> 16) & 0xFF) :
-               0,
-               (client_addr.ss_family == AF_INET ? 
-               (((struct sockaddr_in*)&client_addr)->sin_addr.s_addr >> 24) & 0xFF) :
-               0);
+        char ip_addr[INET_ADDRSTRLEN];
+        if (client_addr.ss_family == AF_INET) {
+            struct sockaddr_in *s = (struct sockaddr_in *)&client_addr;
+            inet_ntop(AF_INET, &(s->sin_addr), ip_addr, sizeof(ip_addr));
+            syslog(LOG_INFO, "Closed connection from %s", ip_addr);
+        } else {
+            syslog(LOG_INFO, "Closed connection from unknown address family");
+        }
     }
 
     cleanup();
     closelog();
     return 0;
 }
-
