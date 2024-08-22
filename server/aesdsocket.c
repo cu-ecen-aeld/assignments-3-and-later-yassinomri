@@ -1,177 +1,137 @@
 #include <sys/types.h>
-#include <sys/stat.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
 #include <sys/socket.h>
-#include <netinet/in.h>
+#include <netdb.h>
 #include <syslog.h>
+#include <errno.h>
+#include <string.h>
+#include <stdio.h>
+#include <arpa/inet.h>
+#include <unistd.h>
+#include <stdlib.h>
 #include <signal.h>
-#include <fcntl.h>
 
-#define PORT 9000
-#define BACKLOG 5
-#define BUFFER_SIZE 1024
-#define DATA_FILE "/var/tmp/aesdsocketdata"
+#define OUT_FILE "/var/tmp/aesdsocketdata"
 
+int run = 1;
+int working = 0;
 int sockfd = -1;
-int daemon_mode = 0;
 
-void cleanup() {
-    if (sockfd != -1) {
-        close(sockfd);
-    }
-    remove(DATA_FILE);
+void handle_signal(int signal) {
+    syslog(LOG_DEBUG, "Caught signal. exiting");
+    if (working) run = 0;
+    else {
+        if(sockfd != -1) close(sockfd);
+        remove(OUT_FILE);
+        closelog();
+        exit(0);
+    };
 }
 
-void signal_handler(int sig) {
-    if (sig == SIGINT || sig == SIGTERM) {
-        syslog(LOG_INFO, "Caught signal, exiting");
-        cleanup();
-        exit(EXIT_SUCCESS);
-    }
-}
+int main(int argc, char** argv) {
+    openlog("aesdsocket", 0, LOG_USER);
+    char server_ip[INET_ADDRSTRLEN];
+    char client_ip[INET_ADDRSTRLEN];
+    remove(OUT_FILE);
+    signal(SIGINT, handle_signal);
+    signal(SIGTERM, handle_signal);
 
-void daemonize() {
-    pid_t pid, sid;
+    int deamon = 0;
+    if (argc > 1 && !strcmp(argv[1], "-d")) { 
+        deamon = 1;
+    };
 
-    pid = fork();
-    if (pid < 0) {
-        perror("Fork failed");
-        exit(EXIT_FAILURE);
-    }
-    if (pid > 0) {
-        // Parent process
-        exit(EXIT_SUCCESS);
-    }
-
-    // Child process continues
-    umask(0);
-
-    sid = setsid();
-    if (sid < 0) {
-        perror("setsid failed");
-        exit(EXIT_FAILURE);
-    }
-
-    if (chdir("/") < 0) {
-        perror("chdir failed");
-        exit(EXIT_FAILURE);
-    }
-
-    close(STDIN_FILENO);
-    close(STDOUT_FILENO);
-    close(STDERR_FILENO);
-}
-
-int main(int argc, char *argv[]) {
-    int opt;
-    int new_socket;
-    struct sockaddr_storage client_addr;
-    socklen_t addr_len;
-    char buffer[BUFFER_SIZE];
-    FILE *fp;
-    ssize_t bytes_received;
-
-    // Parse command-line arguments
-    while ((opt = getopt(argc, argv, "d")) != -1) {
-        switch (opt) {
-            case 'd':
-                daemon_mode = 1;
-                break;
-            default:
-                fprintf(stderr, "Usage: %s [-d]\n", argv[0]);
-                exit(EXIT_FAILURE);
-        }
-    }
-
-    if (daemon_mode) {
-        daemonize();
-        openlog("aesdsocket", LOG_PID | LOG_CONS, LOG_DAEMON);
-    } else {
-        openlog("aesdsocket", LOG_PID | LOG_CONS, LOG_USER);
-    }
-
-    // Create socket
-    sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    struct addrinfo hints, *res;
+    memset(&hints, 0, sizeof hints);
+    hints.ai_family = AF_INET;  // use IPv4
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_flags = AI_PASSIVE;
+    getaddrinfo("127.0.0.1", "9000", &hints, &res);
+    sockfd = socket(res->ai_family, res->ai_socktype, res->ai_protocol); 
     if (sockfd == -1) {
-        syslog(LOG_ERR, "Socket creation failed");
-        exit(EXIT_FAILURE);
+        freeaddrinfo(res);
+        printf("Failed create socket: %s\n", strerror(errno));
+        return -1;
+    }
+    inet_ntop(AF_INET, &(res->ai_addr), server_ip, INET_ADDRSTRLEN);
+    
+    int opt = 1;
+    if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
+        syslog(LOG_ERR, "Failed to set SO_REUSEADDR: %s", strerror(errno));
+        freeaddrinfo(res);
+        close(sockfd);
+        return -1;
     }
 
-    // Bind
-    struct sockaddr_in address;
-    address.sin_family = AF_INET;
-    address.sin_addr.s_addr = INADDR_ANY;
-    address.sin_port = htons(PORT);
-
-    if (bind(sockfd, (struct sockaddr *)&address, sizeof(address)) < 0) {
-        syslog(LOG_ERR, "Bind failed");
-        cleanup();
-        exit(EXIT_FAILURE);
+    if(bind(sockfd, res->ai_addr, res->ai_addrlen)) {
+        syslog(LOG_ERR, "Failed to bind socket to port 9000: %s", strerror(errno));
+        printf("Failed to bind socket to port 9000: %s\n", strerror(errno));
+        freeaddrinfo(res);
+        close(sockfd);
+        return -1;
     }
 
-    // Listen
-    if (listen(sockfd, BACKLOG) < 0) {
-        syslog(LOG_ERR, "Listen failed");
-        cleanup();
-        exit(EXIT_FAILURE);
+    freeaddrinfo(res);
+
+    if(deamon) {
+        printf("running as deamon...\n");
+        if(fork()) exit(0);
     }
 
-    // Signal handling
-    signal(SIGINT, signal_handler);
-    signal(SIGTERM, signal_handler);
-
-    // Main loop
-    while (1) {
-        addr_len = sizeof(client_addr);
-        new_socket = accept(sockfd, (struct sockaddr *)&client_addr, &addr_len);
-        if (new_socket < 0) {
-            syslog(LOG_ERR, "Accept failed");
-            continue;
+    uint8_t buffer[BUFSIZ];
+    while (run) { 
+        if (listen(sockfd, 10)) {
+            syslog(LOG_ERR, "Failed to listen on %s:9000 : %s", server_ip, strerror(errno));
+            return -1;
         }
+        
+        struct sockaddr client;
+        socklen_t size = sizeof(client);
+        working=0;
+        int fd = accept(sockfd, (struct sockaddr *)&client, &size);
+        working=1;
 
-        syslog(LOG_INFO, "Accepted connection");
-
-        fp = fopen(DATA_FILE, "a+");
-        if (fp == NULL) {
-            syslog(LOG_ERR, "Failed to open data file");
-            close(new_socket);
-            continue;
-        }
-
-        while ((bytes_received = recv(new_socket, buffer, sizeof(buffer) - 1, 0)) > 0) {
-            buffer[bytes_received] = '\0';
-            fputs(buffer, fp);
-            fflush(fp);
-
-            // Send the file contents back to the client
-            rewind(fp);
-            while (fgets(buffer, sizeof(buffer), fp) != NULL) {
-                send(new_socket, buffer, strlen(buffer), 0);
-            }
-
-            // Clear buffer and break if newline is received
-            if (strchr(buffer, '\n') != NULL) {
-                break;
-            }
-        }
-
-        fclose(fp);
-        close(new_socket);
-
-        char ip_addr[INET_ADDRSTRLEN];
-        if (client_addr.ss_family == AF_INET) {
-            struct sockaddr_in *s = (struct sockaddr_in *)&client_addr;
-            inet_ntop(AF_INET, &(s->sin_addr), ip_addr, sizeof(ip_addr));
-            syslog(LOG_INFO, "Closed connection from %s", ip_addr);
+        if (fd == -1) {
+            syslog(LOG_ERR, "Failed to connect to client: %s", strerror(errno));
+            return -1;
         } else {
-            syslog(LOG_INFO, "Closed connection from unknown address family");
+            inet_ntop(AF_INET, &client, client_ip, INET_ADDRSTRLEN);
+            syslog(LOG_DEBUG, "Accepted connection from %s", client_ip);
         }
+        
+        FILE *outf = fopen(OUT_FILE, "ab");
+        while (1)
+        {
+            ssize_t bytes = recv(fd, buffer, BUFSIZ, 0);
+            if( bytes <= 0) { 
+                exit(-1);
+            } else {
+                int nl_found = 0;
+                for (int i = 0; i< bytes; i++) {
+                    if (buffer[i] == '\n') { bytes = i+1; nl_found = 1; break; }
+                }
+                
+                fwrite(buffer, 1, bytes, outf);
+                fflush(outf);
+                if(nl_found) break;
+            }
+            
+        }
+        fclose(outf);
+
+        outf = fopen(OUT_FILE, "rb");
+        while (!feof(outf))
+        {
+            size_t bytes = fread(buffer, 1, BUFSIZ, outf); 
+            ssize_t s = send(fd, (void*) buffer, bytes, 0);
+        }
+        fclose(outf);
+
+        close(fd); 
+        syslog(LOG_DEBUG, "Closed connection from %s", client_ip);
     }
 
-    cleanup();
+    close(sockfd);
+    remove(OUT_FILE);
     closelog();
     return 0;
 }

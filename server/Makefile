@@ -1,21 +1,18 @@
-# Default to native compiler if CROSS_COMPILE is not set
-CROSS_COMPILE ?= 
-CC = $(CROSS_COMPILE)gcc
-CFLAGS = -Wall -Wextra
-TARGET = aesdsocket
-SRC = aesdsocket.c
+ifdef CC
+SYSROOT=$(shell $(CC) -print-sysroot)
+else
+SYSROOT=/
+endif
 
-# Compile the target
-$(TARGET): $(SRC)
-	$(CC) $(CFLAGS) -o $(TARGET) $(SRC)
+TARGET=aesdsocket
 
-# Define the 'all' and 'default' targets to build the program
-all: $(TARGET)
+default: 
+	$(CC) -g -Wall -c $(TARGET).c -o $(TARGET).o 
+	$(CC) -g -Wall $(TARGET).o -o $(TARGET) 
+# $(CC) -g -Wall -I$(SYSROOT) $(TARGET).o -o $(TARGET) 
 
-default: $(TARGET)
+all: default
 
-# Clean up the build artifacts
-.PHONY: clean
-clean:
+clean: 
+	rm -f $(TARGET).o
 	rm -f $(TARGET)
-
