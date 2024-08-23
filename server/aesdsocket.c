@@ -45,7 +45,7 @@ int main(int argc, char** argv) {
     hints.ai_family = AF_INET;  // use IPv4
     hints.ai_socktype = SOCK_STREAM;
     hints.ai_flags = AI_PASSIVE;
-    getaddrinfo("127.0.0.1", "9000", &hints, &res);
+    getaddrinfo("NULL", "9000", &hints, &res);
     sockfd = socket(res->ai_family, res->ai_socktype, res->ai_protocol); 
     if (sockfd == -1) {
         freeaddrinfo(res);
@@ -94,7 +94,8 @@ int main(int argc, char** argv) {
             syslog(LOG_ERR, "Failed to connect to client: %s", strerror(errno));
             return -1;
         } else {
-            inet_ntop(AF_INET, &client, client_ip, INET_ADDRSTRLEN);
+            struct sockaddr_in *client_in = (struct sockaddr_in *)&client;
+            inet_ntop(AF_INET, &(client_in->sin_addr), client_ip, INET_ADDRSTRLEN);
             syslog(LOG_DEBUG, "Accepted connection from %s", client_ip);
         }
         
@@ -103,7 +104,12 @@ int main(int argc, char** argv) {
         {
             ssize_t bytes = recv(fd, buffer, BUFSIZ, 0);
             if( bytes <= 0) { 
-                exit(-1);
+                if (bytes == 0) {
+                    syslog(LOG_DEBUG, "Connection closed by client.");
+                } else {
+                    syslog(LOG_ERR, "Error receiving data: %s", strerror(errno));
+                }
+                break;  
             } else {
                 int nl_found = 0;
                 for (int i = 0; i< bytes; i++) {
